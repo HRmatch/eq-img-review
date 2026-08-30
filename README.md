@@ -1,34 +1,25 @@
 # Horse–Rider Image Review — GitHub Pages + Google Sheets
 
-Production-oriented static build based on the working local v4/v5 interface.
+Static web version of the Horse–Rider image validation workspace.
 
 ## Reviewer rules
 
-- English only.
+- English only for this review round.
 - No login/password.
 - Evaluator must be selected from: **Luciana, Idejan, Laércio, Cláudia, Beto, Thierry**.
 - `Agree` and `Remove` save immediately.
 - `Change / replace` requires written details.
-- Progress is stored in Google Sheets and can be recovered from another browser/computer by selecting the same evaluator.
+- Progress is stored in Google Sheets and can be recovered by selecting the same evaluator.
 
 ## Repository layout
 
-- `docs/` — the only folder that should be published by GitHub Pages.
-- `docs/media/` — the referenced image/GIF set.
-- `docs/question_bank.json` — normalized 106-question bank.
-- `docs/config.js` — contains the Google Apps Script `/exec` endpoint.
-- `apps-script/Code.gs` — backend to paste into Apps Script.
-- `GOOGLE_SHEETS_SETUP.md` — setup instructions.
+- `docs/` — GitHub Pages site.
+- `docs/review_assets.zip` — one optimized archive containing all 106 question records and all 157 referenced review images. This is the only binary asset that must be uploaded manually.
+- `docs/config.js` — Google Apps Script `/exec` endpoint.
+- `docs/app.js`, `docs/styles.css`, `docs/assets_bridge.js` — web application.
+- `apps-script/Code.gs` — Google Sheets backend.
+- `GOOGLE_SHEETS_SETUP.md` — backend deployment instructions.
 
-## GitHub Pages
+## Publishing
 
-Recommended repository setup:
-
-1. Create a new repository, e.g. `horse-rider-image-review`.
-2. Upload/push this package to the `main` branch.
-3. Go to **Settings > Pages**.
-4. Choose **Deploy from a branch**.
-5. Select branch `main` and folder `/docs`.
-6. Save.
-
-The static site will then be published from `docs/`. Configure `docs/config.js` with the Apps Script `/exec` URL before reviewer testing.
+After `docs/review_assets.zip` has been uploaded and `docs/config.js` contains the deployed Apps Script `/exec` URL, go to **Settings → Pages**, choose **Deploy from a branch**, branch `main`, folder `/docs`, and save.
