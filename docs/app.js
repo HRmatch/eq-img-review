@@ -14,6 +14,22 @@ const esc = v => String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').
 const pct = (n,d) => d ? Math.round(n*100/d) : 0;
 const letter = i => String.fromCharCode(65+i);
 const configured = () => /^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(API_URL);
+const decisionLabel = decision => ({agree:'Agree',change:'Change / replace',remove:'Remove'}[decision] || decision || '');
+
+const feedbackStyles = document.createElement('style');
+feedbackStyles.textContent = `
+  .login-loading{grid-column:1/-1;display:flex;align-items:center;gap:11px;margin-top:3px;padding:12px 13px;border:1px solid #cbdde8;border-radius:12px;background:#f3f8fb;color:var(--navy)}
+  .login-loading[hidden]{display:none}.login-loading b{display:block;font-size:13px}.login-loading small{display:block;margin-top:2px;color:var(--muted);font-size:11px}
+  .mini-spinner{display:inline-block;flex:0 0 auto;width:18px;height:18px;border:2px solid rgba(23,50,77,.18);border-top-color:var(--navy);border-radius:50%;animation:spin .72s linear infinite}
+  .button-spinner{width:14px;height:14px;border-color:rgba(255,255,255,.35);border-top-color:#fff;margin-right:7px;vertical-align:-2px}
+  .save-status{display:flex;align-items:center;gap:11px;min-height:58px;margin:14px 0 12px;padding:11px 12px;border:1px solid var(--line);border-radius:13px;background:#f8fafb;color:var(--muted)}
+  .save-status .status-icon{width:30px;height:30px;display:grid;place-items:center;flex:0 0 auto;border-radius:50%;font-weight:900;font-size:16px;background:#e9eef1;color:var(--muted)}
+  .save-status b{display:block;color:var(--ink);font-size:13px;line-height:1.2}.save-status small{display:block;margin-top:3px;font-size:11px;line-height:1.3;color:var(--muted)}
+  .save-status.saving{border-color:#b8d2e2;background:#f0f7fb}.save-status.saving .mini-spinner{width:28px;height:28px;border-width:3px}
+  .save-status.saved-ok{border-color:#9fc9ba;background:var(--green-soft)}.save-status.saved-ok .status-icon{background:#d5ecdf;color:#245748}.save-status.saved-ok b{color:#245748}
+  .save-status.error{border-color:#dda19e;background:var(--red-soft)}.save-status.error .status-icon{background:#f3d5d3;color:#8d3531}.save-status.error b{color:#8d3531}
+`;
+document.head.appendChild(feedbackStyles);
 
 function toast(msg, error=false){ toastEl.textContent=msg; toastEl.className='toast show'+(error?' error':''); clearTimeout(toastEl._t); toastEl._t=setTimeout(()=>toastEl.className='toast',2800); }
 function mimeFor(path){ const e=path.split('.').pop().toLowerCase(); return e==='webp'?'image/webp':e==='gif'?'image/gif':e==='jpg'||e==='jpeg'?'image/jpeg':'image/png'; }
@@ -75,11 +91,28 @@ function header(){ return `<header class="topbar"><div class="brand"><span class
 function wireHeader(){ document.getElementById('changeEvaluator')?.addEventListener('click',()=>{state.name='';state.reviews={};state.current=null;renderLogin();}); }
 function count(filter){ return state.bank.questions.filter(q=>filter(q)&&state.reviews[q.uid]).length; }
 function summary(){ const v=Object.values(state.reviews); return {done:v.length,agree:v.filter(x=>x.decision==='agree').length,change:v.filter(x=>x.decision==='change').length,remove:v.filter(x=>x.decision==='remove').length}; }
+function savedStatus(review){
+  if(!review) return `<div id="saved" class="save-status idle" aria-live="polite"><span class="status-icon">•</span><span><b>Not saved yet</b><small>Choose a review option above.</small></span></div>`;
+  return `<div id="saved" class="save-status saved-ok" aria-live="polite"><span class="status-icon">✓</span><span><b>Saved</b><small>${esc(decisionLabel(review.decision))}</small></span></div>`;
+}
 
 function renderLogin(){
   const remembered=EVALUATORS.includes(localStorage.hrReviewEvaluator)?localStorage.hrReviewEvaluator:'';
-  app.innerHTML=`<main class="loginwrap"><section class="logincard"><div class="loginmark">HR</div><h1>Horse–Rider<br>Image Review</h1><p>Review each image in context. Select your name to load your progress and continue where you left off.</p>${configured()?'':'<div class="warning"><b>Setup required:</b> the Google Apps Script URL still needs to be added to <code>config.js</code>.</div>'}<form id="loginForm"><label>Evaluator</label><select id="name" required><option value="" disabled ${remembered?'':'selected'}>Select your name…</option>${EVALUATORS.map(n=>`<option ${n===remembered?'selected':''}>${esc(n)}</option>`).join('')}</select><button class="btn primary" ${configured()?'':'disabled'}>Start review</button></form><small class="muted">No account or password is required. Progress is saved automatically.</small></section></main>`;
-  document.getElementById('loginForm').onsubmit=async e=>{e.preventDefault();const name=document.getElementById('name').value;if(!EVALUATORS.includes(name))return; try{const d=await getState(name);state.name=d.evaluator.name;state.reviews=d.reviews||{};state.progress=d.progress||{last_uid:null};localStorage.hrReviewEvaluator=state.name;renderDashboard();}catch(err){toast(err.message,true)}};
+  app.innerHTML=`<main class="loginwrap"><section class="logincard"><div class="loginmark">HR</div><h1>Horse–Rider<br>Image Review</h1><p>Review each image in context. Select your name to load your progress and continue where you left off.</p>${configured()?'':'<div class="warning"><b>Setup required:</b> the Google Apps Script URL still needs to be added to <code>config.js</code>.</div>'}<form id="loginForm"><label>Evaluator</label><select id="name" required><option value="" disabled ${remembered?'':'selected'}>Select your name…</option>${EVALUATORS.map(n=>`<option ${n===remembered?'selected':''}>${esc(n)}</option>`).join('')}</select><button class="btn primary" id="startReviewBtn" ${configured()?'':'disabled'}>Start review</button><div id="loginLoading" class="login-loading" hidden aria-live="polite"><span class="mini-spinner"></span><span><b>Loading your progress...</b><small>Checking your saved reviews.</small></span></div></form><small class="muted">No account or password is required. Progress is saved automatically.</small></section></main>`;
+  document.getElementById('loginForm').onsubmit=async e=>{
+    e.preventDefault();
+    const select=document.getElementById('name');
+    const button=document.getElementById('startReviewBtn');
+    const loading=document.getElementById('loginLoading');
+    const name=select.value;
+    if(!EVALUATORS.includes(name))return;
+    select.disabled=true; button.disabled=true; button.innerHTML='<span class="mini-spinner button-spinner"></span>Loading...'; loading.hidden=false;
+    try{
+      const d=await getState(name);state.name=d.evaluator.name;state.reviews=d.reviews||{};state.progress=d.progress||{last_uid:null};localStorage.hrReviewEvaluator=state.name;renderDashboard();
+    }catch(err){
+      select.disabled=false; button.disabled=false; button.textContent='Start review'; loading.hidden=true; toast(err.message,true);
+    }
+  };
 }
 
 function renderDashboard(){
@@ -99,13 +132,26 @@ function questionVisuals(q){
 }
 function renderQuestion(uid){
   const q=qByUid(uid); if(!q)return renderDashboard(); state.current=uid; const idx=state.bank.questions.findIndex(x=>x.uid===uid); const phaseQs=state.bank.questions.filter(x=>x.phase_id===q.phase_id); const pidx=phaseQs.findIndex(x=>x.uid===uid); const done=count(x=>x.phase_id===q.phase_id); const r=state.reviews[uid];
-  app.innerHTML=`${header()}<main class="main"><div class="qprogress"><span>${esc(q.section_label)} · Phase ${q.phase_number} — ${esc(q.phase_label)}</span><b>${done}/${phaseQs.length} reviewed</b><div class="track"><i style="width:${pct(done,phaseQs.length)}%"></i></div></div><div class="qlayout"><article class="context"><button class="btn quiet" id="dashboard">← Dashboard</button><div class="qcode"><span>${esc(q.display_number)}</span><b>${esc(q.question_id)}</b></div><h1>${esc(q.text)}</h1>${questionVisuals(q)}</article><aside class="review"><h2>Image review</h2><p>${q.image_refs.length} linked image(s). The decision applies to the image set shown for this question.</p><button class="decision agree ${r?.decision==='agree'?'active':''}" data-d="agree">✓ Agree <small>Keep image</small></button><button class="decision change ${r?.decision==='change'?'active':''}" data-d="change">✎ Change / replace <small>Add details</small></button><button class="decision remove ${r?.decision==='remove'?'active':''}" data-d="remove">× Remove <small>Remove image</small></button><div id="changeBox" class="changebox" ${r?.decision==='change'?'':'hidden'}><label>Describe what should be changed</label><textarea id="feedback" maxlength="5000">${esc(r?.feedback||'')}</textarea><button class="btn primary" id="saveChange">Save change</button></div><div id="saved" class="saved">${r?'Saved automatically · '+r.decision.toUpperCase():'No decision saved yet'}</div><hr><div class="nav"><button class="btn" id="prev" ${idx===0?'disabled':''}>← Previous</button><button class="btn primary" id="next" ${idx===state.bank.questions.length-1?'disabled':''}>Next →</button></div><small>Question ${idx+1}/${state.bank.total_questions} · Phase item ${pidx+1}/${phaseQs.length}</small></aside></div></main>`;
+  app.innerHTML=`${header()}<main class="main"><div class="qprogress"><span>${esc(q.section_label)} · Phase ${q.phase_number} — ${esc(q.phase_label)}</span><b>${done}/${phaseQs.length} reviewed</b><div class="track"><i style="width:${pct(done,phaseQs.length)}%"></i></div></div><div class="qlayout"><article class="context"><button class="btn quiet" id="dashboard">← Dashboard</button><div class="qcode"><span>${esc(q.display_number)}</span><b>${esc(q.question_id)}</b></div><h1>${esc(q.text)}</h1>${questionVisuals(q)}</article><aside class="review"><h2>Image review</h2><p>${q.image_refs.length} linked image(s). The decision applies to the image set shown for this question.</p><button class="decision agree ${r?.decision==='agree'?'active':''}" data-d="agree">✓ Agree <small>Keep image</small></button><button class="decision change ${r?.decision==='change'?'active':''}" data-d="change">✎ Change / replace <small>Add details</small></button><button class="decision remove ${r?.decision==='remove'?'active':''}" data-d="remove">× Remove <small>Remove image</small></button><div id="changeBox" class="changebox" ${r?.decision==='change'?'':'hidden'}><label>Describe what should be changed</label><textarea id="feedback" maxlength="5000">${esc(r?.feedback||'')}</textarea><button class="btn primary" id="saveChange">Save change</button></div>${savedStatus(r)}<hr><div class="nav"><button class="btn" id="prev" ${idx===0?'disabled':''}>← Previous</button><button class="btn primary" id="next" ${idx===state.bank.questions.length-1?'disabled':''}>Next →</button></div><small>Question ${idx+1}/${state.bank.total_questions} · Phase item ${pidx+1}/${phaseQs.length}</small></aside></div></main>`;
   wireHeader(); wireZoom(); document.getElementById('dashboard').onclick=renderDashboard; document.getElementById('prev').onclick=()=>idx>0&&navigate(state.bank.questions[idx-1].uid); document.getElementById('next').onclick=()=>idx<state.bank.questions.length-1&&navigate(state.bank.questions[idx+1].uid); document.querySelectorAll('.decision').forEach(b=>b.onclick=()=>choose(b.dataset.d)); document.getElementById('saveChange')?.addEventListener('click',saveChange); saveProgress(uid);
 }
 async function navigate(uid){ await saveProgress(uid); renderQuestion(uid); window.scrollTo({top:0,behavior:'smooth'}); }
 async function choose(d){ if(d==='change'){document.getElementById('changeBox').hidden=false;document.getElementById('feedback').focus();return;} await persist(d,''); }
 async function saveChange(){const f=document.getElementById('feedback').value.trim();if(!f)return toast('Please describe the requested change before saving.',true);await persist('change',f);}
-async function persist(decision,feedback){ const q=qByUid(state.current), saved=document.getElementById('saved'); saved.textContent='Saving…'; document.querySelectorAll('.decision').forEach(b=>b.disabled=true); try{await sheetWrite({action:'review',name:state.name,uid:q.uid,decision,feedback,section:q.section,phase_id:q.phase_id,phase_number:q.phase_number,display_number:q.display_number,question_id:q.question_id,image_files:(q.image_refs||[]).join('; ')}); const {d,r}=await verifyReview(q.uid,decision); state.reviews=d.reviews||state.reviews;state.progress=d.progress||state.progress;saved.textContent='Saved automatically · '+decision.toUpperCase();toast('Saved');document.querySelectorAll('.decision').forEach(b=>b.classList.toggle('active',b.dataset.d===decision)); if(decision!=='change')document.getElementById('changeBox').hidden=true;}catch(err){saved.textContent=err.message;toast(err.message,true)}finally{document.querySelectorAll('.decision').forEach(b=>b.disabled=false)} }
+async function persist(decision,feedback){
+  const q=qByUid(state.current), saved=document.getElementById('saved');
+  saved.className='save-status saving'; saved.innerHTML='<span class="mini-spinner"></span><span><b>Saving your review...</b><small>Please wait for confirmation.</small></span>';
+  document.querySelectorAll('.decision').forEach(b=>b.disabled=true);
+  try{
+    await sheetWrite({action:'review',name:state.name,uid:q.uid,decision,feedback,section:q.section,phase_id:q.phase_id,phase_number:q.phase_number,display_number:q.display_number,question_id:q.question_id,image_files:(q.image_refs||[]).join('; ')});
+    const {d,r}=await verifyReview(q.uid,decision);
+    state.reviews=d.reviews||state.reviews;state.progress=d.progress||state.progress;
+    saved.className='save-status saved-ok'; saved.innerHTML=`<span class="status-icon">✓</span><span><b>Saved</b><small>${esc(decisionLabel(decision))}</small></span>`;
+    toast('Saved');document.querySelectorAll('.decision').forEach(b=>b.classList.toggle('active',b.dataset.d===decision)); if(decision!=='change')document.getElementById('changeBox').hidden=true;
+  }catch(err){
+    saved.className='save-status error'; saved.innerHTML=`<span class="status-icon">!</span><span><b>Not saved</b><small>${esc(err.message)}</small></span>`; toast(err.message,true);
+  }finally{document.querySelectorAll('.decision').forEach(b=>b.disabled=false)}
+}
 async function saveProgress(uid){ if(!state.name)return; state.progress.last_uid=uid; try{await sheetWrite({action:'progress',name:state.name,last_uid:uid})}catch(e){console.warn(e)} }
 function wireZoom(){document.querySelectorAll('.zoom').forEach(img=>img.onclick=()=>{lightboxImage.src=img.src;lightboxCaption.textContent=img.dataset.cap||'';lightbox.hidden=false;document.body.style.overflow='hidden'});}
 function closeLightbox(){lightbox.hidden=true;lightboxImage.src='';document.body.style.overflow='';}
